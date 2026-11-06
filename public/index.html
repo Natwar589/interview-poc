@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Interview Assistant</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>Interview Assistant <span class="tag">POC</span></h1>
+    <div class="controls">
+      <select id="source" title="Audio source">
+        <option value="tab">Meeting tab audio</option>
+        <option value="mic">Microphone</option>
+      </select>
+      <button id="startBtn" class="primary">Start</button>
+      <button id="stopBtn" disabled>Stop</button>
+      <span id="meter" class="meter off" title="Captured audio level" aria-label="Captured audio level">
+        <span class="meter-icon" aria-hidden="true">🎙</span>
+        <span class="meter-track"><span id="meterBar" class="meter-bar"></span></span>
+        <span id="meterText" class="meter-text">No audio</span>
+      </span>
+      <span id="status" class="status idle" role="status" aria-live="polite">
+        <span class="dot"></span><span id="statusText">Idle</span>
+      </span>
+    </div>
+  </header>
+
+  <div id="errorBar" class="error-bar" hidden></div>
+
+  <main class="layout">
+    <section class="panel transcript-panel">
+      <div class="panel-head">
+        <h2>Live transcript</h2>
+        <button id="answerLastBtn" class="small" title="Force an answer for the last thing said">Answer last line</button>
+      </div>
+      <div id="transcript" class="transcript" aria-live="off">
+        <p class="empty">Press Start and share the meeting tab (tick "Share tab audio").</p>
+      </div>
+      <form id="askForm" class="ask-form">
+        <input id="askInput" type="text" placeholder="Or type a question to test…" autocomplete="off" />
+        <button type="submit" class="small">Ask</button>
+      </form>
+    </section>
+
+    <section class="panel answer-panel">
+      <div class="panel-head"><h2>Detected question</h2><span id="questionReason" class="muted"></span></div>
+      <div id="question" class="question muted">Waiting for a question…</div>
+
+      <div class="panel-head"><h2>Suggested answer</h2></div>
+      <div id="answer" class="answer"></div>
+
+      <div id="metrics" class="metrics" hidden>
+        <div><span>Speech end → detected</span><b id="mDetect">–</b></div>
+        <div><span>Time to first token</span><b id="mTtft">–</b></div>
+        <div><span>Speech end → first token</span><b id="mE2e">–</b></div>
+        <div><span>Full answer</span><b id="mTotal">–</b></div>
+      </div>
+
+      <details class="history">
+        <summary>Earlier Q&amp;A (<span id="historyCount">0</span>)</summary>
+        <ol id="historyList"></ol>
+      </details>
+    </section>
+
+    <section class="panel context-panel">
+      <div class="panel-head"><h2>Your context</h2><span id="contextSaved" class="muted"></span></div>
+      <label for="resume">Resume / summary</label>
+      <textarea id="resume" rows="9" placeholder="Paste your resume or a short professional summary…"></textarea>
+      <label for="jd">Job description</label>
+      <textarea id="jd" rows="9" placeholder="Paste the job description…"></textarea>
+      <p class="muted small-text">Saved in this browser only. Sent to the server when you press Start or Ask.</p>
+    </section>
+  </main>
+
+  <script src="app.js" type="module"></script>
+</body>
+</html>
