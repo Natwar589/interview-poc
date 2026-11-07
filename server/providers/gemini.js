@@ -1,4 +1,5 @@
 import { GoogleGenAI, ApiError } from '@google/genai';
+import { KeyPool, readKeys, AllKeysBenchedError, defaultClassify } from '../keyPool.js';
 
 const MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite';
 // Used when the main model is overloaded (503/429/500) before any text arrives.
@@ -12,7 +13,8 @@ const RETRYABLE = new Set([429, 500, 503]);
 const COOLDOWN_MS = 60_000;
 let primaryDownUntil = 0;
 
-let ai;
+let pool;
+const clients = new Map(); // api key -> GoogleGenAI
 
 export const geminiConfig = { provider: 'gemini', model: MODEL, fallbackModel: FALLBACK_MODEL, thinking: THINKING };
 
@@ -21,27 +23,43 @@ function thinkingFor(model) {
   return model.startsWith('gemini-2.') ? { thinkingBudget: 0 } : { thinkingLevel: THINKING };
 }
 
-/** Stream from Gemini. Same contract as streamAnthropic. */
-export async function streamGemini({ system, turns, signal, onDelta }) {
-  if (Date.now() < primaryDownUntil && FALLBACK_MODEL !== MODEL) {
-    return streamOnce(FALLBACK_MODEL, { system, turns, signal, onDelta });
-  }
-  try {
-    return await streamOnce(MODEL, { system, turns, signal, onDelta });
-  } catch (err) {
-    // Only fall back if nothing was shown yet; a half-answer can't be restarted cleanly.
-    if (err instanceof ApiError && RETRYABLE.has(err.status) && !err.partial && FALLBACK_MODEL !== MODEL) {
-      primaryDownUntil = Date.now() + COOLDOWN_MS;
-      console.warn(`[gemini] ${MODEL} returned ${err.status}; using ${FALLBACK_MODEL} for the next ${COOLDOWN_MS / 1000}s`);
-      return streamOnce(FALLBACK_MODEL, { system, turns, signal, onDelta });
+/**
+ * Stream from Gemini. Same contract as streamAnthropic.
+ * Tries the main model on each key in turn (GEMINI_API_KEYS), then the fallback model.
+ */
+export async function streamGemini({ system, turns, signal, onDelta, skipIfAllBenched = false }) {
+  pool ??= new KeyPool('gemini', readKeys('GEMINI'), classifyGeminiError);
+  const models = FALLBACK_MODEL !== MODEL ? [MODEL, FALLBACK_MODEL] : [MODEL];
+  for (const [i, model] of models.entries()) {
+    const isLast = i === models.length - 1;
+    if (!isLast && Date.now() < primaryDownUntil) continue;
+    try {
+      return await pool.run((key) => streamOnce(model, key, { system, turns, signal, onDelta }), {
+        scope: model,
+        // Every key is rate-limited on the main model: go straight to the fallback model
+        // (and on the fallback model, to the next provider when there is one).
+        skipIfAllBenched: !isLast || skipIfAllBenched,
+      });
+    } catch (err) {
+      // Only fall back if nothing was shown yet; a half-answer can't be restarted cleanly.
+      const retryable = err instanceof AllKeysBenchedError || (err instanceof ApiError && RETRYABLE.has(err.status));
+      if (isLast || err.partial || !retryable) throw err;
+      if (!(err instanceof AllKeysBenchedError)) primaryDownUntil = Date.now() + COOLDOWN_MS;
+      console.warn(`[gemini] ${model}: ${err.status ?? ''} ${err instanceof AllKeysBenchedError ? 'all keys rate-limited' : 'failed'}; using ${FALLBACK_MODEL}`);
     }
-    throw err;
   }
 }
 
-async function streamOnce(model, { system, turns, signal, onDelta }) {
+// Gemini reports an invalid key as 400 API_KEY_INVALID rather than 401.
+function classifyGeminiError(err) {
+  if (err?.status === 400 && /API_KEY_INVALID|API key not valid/.test(err.message)) return defaultClassify({ status: 401 });
+  return defaultClassify(err);
+}
+
+async function streamOnce(model, apiKey, { system, turns, signal, onDelta }) {
   // v1beta: some models reject systemInstruction on v1.
-  ai ??= new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY, apiVersion: 'v1beta' });
+  if (!clients.has(apiKey)) clients.set(apiKey, new GoogleGenAI({ apiKey, apiVersion: 'v1beta' }));
+  const ai = clients.get(apiKey);
   let text = '';
   let firstTokenAt = null;
   let usage;
@@ -81,9 +99,9 @@ async function streamOnce(model, { system, turns, signal, onDelta }) {
 }
 
 export function describeGeminiError(err) {
-  if (!process.env.GEMINI_API_KEY) return 'GEMINI_API_KEY is not set on the server.';
+  if (!readKeys('GEMINI').length) return 'GEMINI_API_KEY (or GEMINI_API_KEYS) is not set on the server.';
   if (err instanceof ApiError) {
-    if (err.status === 429) return 'Gemini rate limit / free-tier quota hit; wait a moment and try again.';
+    if (err.status === 429) return 'Gemini rate limit / free-tier quota hit on every key; wait a moment or add more keys to GEMINI_API_KEYS.';
     // The SDK puts the JSON error body in `message`; surface Google's own explanation.
     // The body can be nested and escaped; the innermost "message" is Google's text.
     const all = [...err.message.matchAll(/\\?"message\\?":\s*\\?"([^"\\]+)/g)];

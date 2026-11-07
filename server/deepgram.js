@@ -5,9 +5,10 @@ import WebSocket from 'ws';
 
 export const SAMPLE_RATE = 16000; // browser downsamples to 16 kHz mono PCM16
 
-export function openDeepgram({ apiKey, model, endpointingMs, keyterms = [], onTranscript, onUtteranceEnd, onError, onClose }) {
+export function openDeepgram({ apiKey, model, language = 'en', endpointingMs, keyterms = [], onTranscript, onUtteranceEnd, onError, onClose }) {
   const params = new URLSearchParams({
     model,
+    language,                     // e.g. en, en-IN (accent-tuned)
     encoding: 'linear16',
     sample_rate: String(SAMPLE_RATE),
     channels: '1',

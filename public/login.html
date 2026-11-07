@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sign in · Interview Assistant</title>
+  <meta name="color-scheme" content="dark light" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" />
+  <script>
+    try { const t = localStorage.getItem('interview-assistant-theme'); if (t) document.documentElement.dataset.theme = t; } catch {}
+  </script>
+  <style>
+    /* Self-contained: the app's stylesheet is behind the login. Same tokens as styles.css. */
+    :root {
+      --bg: #161412; --card: #23201c; --elevated: #2b2723;
+      --accent: #8cc0b0; --accent-strong: #79b09f; --accent-soft: rgba(140, 192, 176, 0.13); --accent-text: #a5d2c4;
+      --text: #f3eee7; --text-2: #bdb4a8; --muted: #8b8277;
+      --warning: #e0b06a; --warning-soft: rgba(224, 176, 106, 0.12); --warning-line: rgba(224, 176, 106, 0.28);
+      --border: rgba(255, 240, 222, 0.08); --border-strong: rgba(255, 240, 222, 0.15); --on-accent: #10211c;
+      --shadow-lg: 0 2px 4px rgba(0, 0, 0, 0.2), 0 16px 40px -12px rgba(0, 0, 0, 0.55);
+      --font: "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      color-scheme: dark;
+    }
+    @media (prefers-color-scheme: light) {
+      :root:not([data-theme="dark"]) {
+        --bg: #f7f4ef; --card: #ffffff; --elevated: #f2eee8;
+        --accent: #3f7c6d; --accent-strong: #3f7c6d; --accent-soft: rgba(63, 124, 109, 0.10); --accent-text: #2f6a5c;
+        --text: #29241f; --text-2: #5d554c; --muted: #8c8378;
+        --warning: #a96c16; --warning-soft: rgba(201, 138, 44, 0.10); --warning-line: rgba(201, 138, 44, 0.28);
+        --border: rgba(70, 50, 30, 0.10); --border-strong: rgba(70, 50, 30, 0.18); --on-accent: #ffffff;
+        --shadow-lg: 0 2px 6px rgba(60, 40, 20, 0.05), 0 18px 44px -16px rgba(60, 40, 20, 0.2);
+        color-scheme: light;
+      }
+    }
+    :root[data-theme="light"] {
+      --bg: #f7f4ef; --card: #ffffff; --elevated: #f2eee8;
+      --accent: #3f7c6d; --accent-strong: #3f7c6d; --accent-soft: rgba(63, 124, 109, 0.10); --accent-text: #2f6a5c;
+      --text: #29241f; --text-2: #5d554c; --muted: #8c8378;
+      --warning: #a96c16; --warning-soft: rgba(201, 138, 44, 0.10); --warning-line: rgba(201, 138, 44, 0.28);
+      --border: rgba(70, 50, 30, 0.10); --border-strong: rgba(70, 50, 30, 0.18); --on-accent: #ffffff;
+      --shadow-lg: 0 2px 6px rgba(60, 40, 20, 0.05), 0 18px 44px -16px rgba(60, 40, 20, 0.2);
+      color-scheme: light;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0; display: grid; place-items: center; padding: 24px 16px;
+      background: var(--bg); color: var(--text); font: 15px/1.55 var(--font); -webkit-font-smoothing: antialiased;
+    }
+    .card {
+      width: 100%; max-width: 400px; background: var(--card); border: 1px solid var(--border);
+      border-radius: 20px; box-shadow: var(--shadow-lg); padding: 32px 28px 28px;
+    }
+    .mark {
+      width: 44px; height: 44px; border-radius: 13px; display: grid; place-items: center; margin-bottom: 20px;
+      background: var(--accent-soft); color: var(--accent-text); border: 1px solid var(--border);
+    }
+    .icon { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    h1 { margin: 0 0 6px; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+    .sub { margin: 0 0 24px; color: var(--text-2); }
+    form { display: grid; gap: 16px; }
+    label { display: grid; gap: 6px; font-size: 13px; font-weight: 600; color: var(--text-2); }
+    input {
+      font: inherit; color: var(--text); background: var(--elevated); border: 1px solid var(--border);
+      border-radius: 12px; height: 44px; padding: 0 14px; transition: border-color 150ms, box-shadow 150ms;
+    }
+    input::placeholder { color: var(--muted); }
+    input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+    button {
+      font: inherit; font-weight: 600; height: 44px; border: 0; border-radius: 12px; cursor: pointer; margin-top: 4px;
+      background: var(--accent-strong); color: var(--on-accent); transition: background-color 150ms;
+    }
+    button:hover { background: var(--accent); }
+    button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .error {
+      display: none; margin: 0 0 18px; padding: 10px 12px; border-radius: 12px; font-size: 14px;
+      background: var(--warning-soft); border: 1px solid var(--warning-line);
+    }
+    .error.show { display: block; }
+    .foot { margin: 20px 0 0; font-size: 12px; color: var(--muted); text-align: center; }
+    .error.ok { background: var(--accent-soft); border-color: transparent; }
+    .code-input { font-size: 24px; font-weight: 700; letter-spacing: 0.4em; text-align: center; height: 56px; padding-left: 0.4em; }
+    .sent-to { margin: -12px 0 20px; color: var(--text-2); }
+    .sent-to b { color: var(--text); font-weight: 600; overflow-wrap: anywhere; }
+    .links { display: flex; justify-content: space-between; gap: 12px; margin-top: 2px; }
+    .link {
+      background: none; border: 0; padding: 4px 0; height: auto; margin: 0; color: var(--accent-text);
+      font-size: 13px; font-weight: 600; cursor: pointer;
+    }
+    .link:hover { background: none; text-decoration: underline; }
+    .link:disabled { color: var(--muted); cursor: default; text-decoration: none; }
+    button[type="submit"]:disabled { opacity: 0.6; cursor: default; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <div class="mark" aria-hidden="true">
+      <svg class="icon" viewBox="0 0 24 24"><path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z"/><path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"/></svg>
+    </div>
+    <h1 id="title">Welcome</h1>
+    <p class="sub" id="subtitle">Sign in with your email. We'll send you a code.</p>
+    <p id="message" class="error" role="alert"></p>
+
+    <form id="emailForm" novalidate>
+      <label>Your name
+        <input id="name" name="name" type="text" autocomplete="name" maxlength="60" required placeholder="e.g. Priya Sharma" />
+      </label>
+      <label>Email
+        <input id="email" name="email" type="email" autocomplete="email" inputmode="email" required placeholder="you@example.com" />
+      </label>
+      <button type="submit" id="sendBtn">Email me a code</button>
+    </form>
+
+    <form id="codeForm" novalidate hidden>
+      <p class="sent-to">We sent a 6-digit code to <b id="sentTo"></b>.</p>
+      <label>Sign-in code
+        <input id="code" name="code" class="code-input" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" required placeholder="••••••" />
+      </label>
+      <button type="submit" id="verifyBtn">Sign in</button>
+      <div class="links">
+        <button type="button" class="link" id="changeBtn">Use a different email</button>
+        <button type="button" class="link" id="resendBtn">Send a new code</button>
+      </div>
+    </form>
+    <p class="foot">You'll stay signed in on this device for 7 days.</p>
+  </main>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const els = {
+      title: $('title'), subtitle: $('subtitle'), message: $('message'),
+      emailForm: $('emailForm'), name: $('name'), email: $('email'), sendBtn: $('sendBtn'),
+      codeForm: $('codeForm'), sentTo: $('sentTo'), code: $('code'), verifyBtn: $('verifyBtn'),
+      changeBtn: $('changeBtn'), resendBtn: $('resendBtn'),
+    };
+
+    function say(text, ok = false) {
+      els.message.textContent = text || '';
+      els.message.className = `error${text ? ' show' : ''}${ok ? ' ok' : ''}`;
+    }
+
+    async function post(url, data) {
+      const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+      let body = {};
+      try { body = await r.json(); } catch {}
+      return { ok: r.ok, ...body };
+    }
+
+    // Remember name and email on this device so next time it's one click.
+    try {
+      const saved = JSON.parse(localStorage.getItem('interview-assistant-login') || '{}');
+      els.name.value = saved.name || '';
+      els.email.value = saved.email || '';
+    } catch {}
+    (els.name.value ? (els.email.value ? els.sendBtn : els.email) : els.name).focus();
+
+    let resendTimer;
+    function startResendCountdown(seconds = 30) {
+      clearInterval(resendTimer);
+      let left = seconds;
+      const tick = () => {
+        els.resendBtn.disabled = left > 0;
+        els.resendBtn.textContent = left > 0 ? `Send a new code (${left} s)` : 'Send a new code';
+        if (left-- <= 0) clearInterval(resendTimer);
+      };
+      tick();
+      resendTimer = setInterval(tick, 1000);
+    }
+
+    function showCodeStep(email) {
+      els.emailForm.hidden = true;
+      els.codeForm.hidden = false;
+      els.title.textContent = 'Check your email';
+      els.subtitle.textContent = 'Enter the code to finish signing in.';
+      els.sentTo.textContent = email;
+      els.code.value = '';
+      els.code.focus();
+      startResendCountdown();
+    }
+
+    function showEmailStep() {
+      els.codeForm.hidden = true;
+      els.emailForm.hidden = false;
+      els.title.textContent = 'Welcome';
+      els.subtitle.textContent = "Sign in with your email. We'll send you a code.";
+      els.email.focus();
+    }
+
+    async function sendCode() {
+      const name = els.name.value.trim();
+      const email = els.email.value.trim();
+      if (!name) { say('Please tell us your name.'); els.name.focus(); return; }
+      if (!els.email.checkValidity() || !email) { say('Please enter a valid email address.'); els.email.focus(); return; }
+      try { localStorage.setItem('interview-assistant-login', JSON.stringify({ name, email })); } catch {}
+      els.sendBtn.disabled = true;
+      els.sendBtn.textContent = 'Sending…';
+      say('');
+      try {
+        const res = await post('/login/code', { name, email });
+        if (res.ok) { showCodeStep(email); say('Code sent. It can take a minute to arrive.', true); }
+        else say(res.error || 'Something went wrong. Please try again.');
+      } catch {
+        say("Couldn't reach the server. Check your connection and try again.");
+      } finally {
+        els.sendBtn.disabled = false;
+        els.sendBtn.textContent = 'Email me a code';
+      }
+    }
+
+    els.emailForm.addEventListener('submit', (e) => { e.preventDefault(); sendCode(); });
+
+    els.codeForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const code = els.code.value.replace(/\D/g, '');
+      if (code.length !== 6) { say('The code has 6 digits.'); els.code.focus(); return; }
+      els.verifyBtn.disabled = true;
+      els.verifyBtn.textContent = 'Signing in…';
+      try {
+        const res = await post('/login/verify', { email: els.email.value.trim(), code });
+        if (res.ok) { location.href = '/'; return; }
+        say(res.error || 'Something went wrong. Please try again.');
+        if (res.restart) { clearInterval(resendTimer); els.resendBtn.disabled = false; els.resendBtn.textContent = 'Send a new code'; }
+        els.code.select();
+      } catch {
+        say("Couldn't reach the server. Check your connection and try again.");
+      } finally {
+        els.verifyBtn.disabled = false;
+        els.verifyBtn.textContent = 'Sign in';
+      }
+    });
+
+    // Submit as soon as all 6 digits are in (typed or pasted from the email).
+    els.code.addEventListener('input', () => {
+      els.code.value = els.code.value.replace(/\D/g, '').slice(0, 6);
+      if (els.code.value.length === 6) els.codeForm.requestSubmit();
+    });
+
+    els.changeBtn.addEventListener('click', () => { say(''); showEmailStep(); });
+    els.resendBtn.addEventListener('click', async () => {
+      const res = await post('/login/code', { name: els.name.value.trim(), email: els.email.value.trim() }).catch(() => ({}));
+      if (res.ok) { say('New code sent.', true); startResendCountdown(); els.code.value = ''; els.code.focus(); }
+      else { say(res.error || 'Something went wrong. Please try again.'); if (res.wait) startResendCountdown(res.wait); }
+    });
+  </script>
+</body>
+</html>

@@ -5,7 +5,7 @@ Browser audio ──PCM16 over WS──▶ Node server ──▶ Deepgram (strea
                                      │               │ interim / final / speech_final / UtteranceEnd
                                      │◀──────────────┘
                                      ├─ QuestionDetector (pause + heuristics)
-                                     ├─ LLM: Gemini or Claude (streaming answer, resume + JD + memory)
+                                     ├─ LLM: Gemini, Claude or Groq (streaming answer, resume + JD + memory)
 UI ◀──JSON over the same WS────────┘  transcript · question · answer tokens · status · metrics
 ```
 
@@ -14,14 +14,15 @@ UI ◀──JSON over the same WS────────┘  transcript · ques
 Requires Node 20+ and Chrome or Edge (for tab-audio capture).
 
 ```bash
-cp .env.example .env      # add DEEPGRAM_API_KEY plus GEMINI_API_KEY (or ANTHROPIC_API_KEY)
+cp .env.example .env      # add DEEPGRAM_API_KEY plus GEMINI_API_KEYS (or ANTHROPIC_/GROQ_API_KEYS)
 npm install
 npm start                 # http://localhost:3000
 ```
 
 1. Paste your resume and the job description into the right-hand panel. They are saved in localStorage.
-2. Pick **Meeting tab audio**, press **Start**, choose the Meet or Zoom tab and tick **Share tab audio**. **Microphone** is there for solo testing.
-3. Questions are detected and answered on their own. **Answer last line** forces an answer for the latest utterance, and the text box lets you type a question.
+2. Pick **Meeting tab**, press **Start interview**, choose the Meet or Zoom tab under **Chrome Tab** and keep **Also share tab audio** on. The tab carries only the *other* participants, so testing alone in a meeting shows "silent": use **Meeting tab + my mic** (both mixed) or **Microphone** for that.
+3. Questions are detected and answered on their own. **Answer last line** forces an answer for the latest utterance, and the box under the transcript takes a typed question (no audio session needed).
+4. Under each answer: **Copy**, **Regenerate**, **Shorter**, **More natural**, **More detail**. The toolbar sets the length (Short / Balanced / Detailed) and **Compact** hides the supporting points. The profile panel holds the resume, job description and answer style (Natural / Concise / Technical / Simple). **Pause** stops sending audio without ending the share.
 
 Without keys, run `MOCK_LLM=1 npm start` and use the text box. It streams a canned answer through the real UI path. `npm test` runs the detector tests. `node scripts/replay.mjs clip.wav` streams a recorded clip through the running server and prints transcripts, questions, answers and latency, with no browser needed.
 
@@ -37,10 +38,13 @@ Without keys, run `MOCK_LLM=1 npm start` and use the text box. It streams a cann
 | `server/answer.js` | Prompt, conversation memory, provider switch (`LLM_PROVIDER`), mock mode |
 | `server/providers/gemini.js` | Gemini streaming via `@google/genai` |
 | `server/providers/anthropic.js` | Claude streaming via `@anthropic-ai/sdk` |
+| `server/providers/groq.js` | Groq streaming via `groq-sdk` |
+| `server/keyPool.js` | API key rotation shared by all three providers |
+| `server/providerChain.js` | Provider fallback (`LLM_PROVIDER=gemini,anthropic,groq`) |
 
 ## Key decisions
 
-**Audio.** I chose tab audio (`getDisplayMedia`) over mixing in the mic. Tab audio carries only the interviewer, so the candidate's own speech never gets treated as a question. Downsampling happens in the browser, which cuts upload to 32 KB/s and lets Deepgram skip resampling. Each chunk is 100 ms: smaller chunks don't make Deepgram faster, they just add more frames.
+**Audio.** I chose tab audio (`getDisplayMedia`) over mixing in the mic. Tab audio carries only the interviewer, so the candidate's own speech never gets treated as a question. **Meeting tab + my mic** is the opt-in alternative: one Web Audio source per track feeds the same worklet, which sums them, and the mic runs with echo cancellation so the meeting audio from the speakers isn't picked up twice (headphones are still safest). In that mode the candidate's own sentences can be detected as questions too. Downsampling happens in the browser, which cuts upload to 32 KB/s and lets Deepgram skip resampling. Each chunk is 100 ms: smaller chunks don't make Deepgram faster, they just add more frames.
 
 **STT.** I used Deepgram `nova-3` through the raw WebSocket. It has good streaming latency, free credits, and gives two separate end-of-speech signals: `speech_final` after `endpointing` ms of silence (300 here) and `UtteranceEnd` after a 1 s word gap. `smart_format` adds punctuation, so a `?` becomes a strong signal for the detector.
 
@@ -69,9 +73,12 @@ Testing showed Deepgram's `speech_final` sometimes misses a pause entirely, so a
 
 Why not an LLM classifier? It puts a second model round trip (about 0.3 to 0.8 s) on the critical path at every pause, which uses up much of the 3 s budget. The heuristics take microseconds. A false positive costs a few tokens. A false negative is covered by the manual button. The main weakness is long rambling questions with mid-thought pauses over 300 ms, which can fire early. Next step: run a small, fast classifier *in parallel* with answer generation and cancel the answer if it says "not a question", so it never adds latency.
 
-**Answers.** The LLM is chosen with `LLM_PROVIDER`, and the default is `gemini`. Both providers get the same prompt and memory and stream token by token. Only the SDK call differs.
+**Answers.** The LLM is chosen with `LLM_PROVIDER`, a list in fallback order; the default is `gemini,anthropic,groq`. All providers get the same prompt and memory and stream token by token. Only the SDK call differs.
 
-- The system prompt fixes the format: first person, 4 or 5 one-sentence bullets, at most 90 words, no preamble. An earlier "60 to 90 words" wording produced 100 to 110 words, and per-bullet limits fixed it (now 54 to 60). It also forbids inventing resume facts and compresses behavioral answers into STAR form.
+- The system prompt asks for something a person would actually say: first person, plain conversational English, short spoken paragraphs first, then optional "Key points" bullets, 2 to 4 bold key terms, no "Great question"-style openers. Behavioral answers are told as a short story.
+- **Style and length** come from the UI (`answerStyle`: natural / concise / technical / beginner, `answerLength`: short / balanced / detailed) as optional fields of the existing `context` message. The length is also repeated next to each question, because models drift long without it: measured with Groq, Short / Balanced / Detailed gave 57 / 79 / 125 words.
+- **Rewrites** (`{type:'ask', refine:'regenerate'|'shorter'|'conversational'|'detailed'}`) redo the last answer: the model sees the previous answer plus the instruction, and the result replaces that Q&A in the memory instead of adding one.
+- **No resume, no made-up career.** Without a resume, models happily invent years, employers and metrics. A note next to the question makes them use placeholders instead ("I've been working as a [your role] for [X years]"). With Groq this removed invented numbers; story answers can still describe a generic project, so pasting a resume is the real fix.
 - The resume and JD sit in the system prompt, which stays identical all session, so both providers can cache it.
 - **Gemini** defaults to `gemini-2.5-flash-lite` with thinking off. If it is overloaded (503/429/500) before any text arrives, the request retries once on `gemini-2.5-flash`, and later questions go straight to that model for 60 s instead of paying for a failing call each time. On the free tier, the 429 quota errors added about 1 s to every answer before this cooldown existed. On a free-tier key I timed time to first token per model (3 runs each):
 
@@ -84,10 +91,15 @@ Why not an LLM classifier? It puts a second model round trip (about 0.3 to 0.8 s
   | gemini-3.7 / 3.8 flash | 503 "high demand" on every run |
 
 - **Claude** (`claude-opus-5-5`) runs at `effort: "low"`, with an explicit `cache_control` block and server-side refusal fallback.
+- **Groq** defaults to `openai/gpt-oss-120b` at reasoning effort `low`, with the reasoning text hidden. On a free key it measured 0.4 to 0.7 s to first token; `qwen/qwen3.8-27b` with reasoning `none` was faster (0.2 to 0.4 s), and `gpt-oss-20b` slower (1.3 to 2.1 s). Set `GROQ_MODEL` and `GROQ_REASONING` to switch.
+- **Key rotation.** Each provider takes several keys in `GEMINI_API_KEYS`, `ANTHROPIC_API_KEYS` or `GROQ_API_KEYS` (comma separated; the single `*_API_KEY` still works). Requests go round-robin across the keys. A key that returns 429 is benched for 60 s and a key rejected with 401/403 for 10 min, and the request retries on the next key, but only before any text has streamed, since a half-shown answer can't be restarted cleanly. Errors that aren't the key's fault (500/503 overload) are not rotated. For Gemini the bench is per model, because free-tier quotas are per key and per model: the main model is tried on every available key before falling back to `gemini-2.5-flash`. With more than one key, the SDKs' own retry-on-429 is turned off so rotation happens immediately. Logs show `[keys] gemini key 2/3 ...` and never the key itself.
+- **Provider fallback.** When every key of a provider fails before any text has streamed (quota, overload, rejected keys), the same question goes to the next provider in `LLM_PROVIDER`: Gemini, then Claude, then Groq. A provider whose keys are all benched is skipped without a request, so after the first miss the fallback costs nothing; the last provider is always tried. Providers with no keys are left out at startup, which logs the chain (`answers: gemini (...) -> anthropic (...) -> groq (...)`). The SDKs' own retries are off, since rotation and fallback do the retrying. If all fail, the UI shows each provider's reason. The metrics line shows which provider answered.
 
 **Nice-to-haves picked (2):**
 1. **Conversation memory.** The last 5 Q&A pairs are sent as prior turns, so "and how would you scale that?" works.
 2. **Latency metrics in the UI.** See below.
+
+**Interface.** Plain HTML, CSS and JavaScript, no framework or icon library: design tokens in CSS variables (dark default, light theme via `prefers-color-scheme` or the header toggle), Plus Jakarta Sans, a warm stone and eucalyptus palette with soft layered shadows, Lucide-style icons in an inline SVG sprite. Three panels on desktop; below 1200 px an Interview / Profile switch (transcript and answer side by side); below 760 px Transcript / Answer / Profile tabs, and a newly detected question switches to the Answer tab. Motion is limited to short fades, the status dot and the audio bars, which follow the real input level; all of it is off under `prefers-reduced-motion`.
 
 ## Latency
 
@@ -120,8 +132,8 @@ Detection is now steady at about 1 s. Gemini free-tier TTFT varies from 1.1 to 2
 
 ## Known limits / not done
 
-- No WebSocket auto-reconnect. A dropped connection shows an error and asks for a reload. Reconnect was a third nice-to-have and I stayed within two.
-- No speaker diarization. In mic mode the candidate's own speech can trigger answers; tab mode avoids this.
+- The browser reconnects the WebSocket on its own (backoff 0.5 to 8 s) and restarts the session if audio was being captured, but an answer that was streaming when the connection dropped is lost.
+- No speaker diarization. In mic and tab + mic modes the candidate's own speech can trigger answers; tab mode avoids this.
 - The detector is English-only and rule-based. Its tests cover typical phrasings, not adversarial ones.
 - One Deepgram stream per browser tab, no rate limiting. That's fine for a POC, not for multiple users.
 - Context is capped at 20 k characters per field.

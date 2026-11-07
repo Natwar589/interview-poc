@@ -4,73 +4,230 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Interview Assistant</title>
+  <meta name="color-scheme" content="dark light" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" />
   <link rel="stylesheet" href="styles.css" />
+  <script>
+    // Apply the saved theme before first paint (no flash).
+    try { const t = localStorage.getItem('interview-assistant-theme'); if (t) document.documentElement.dataset.theme = t; } catch {}
+  </script>
 </head>
-<body>
+<body data-view="answer">
+  <!-- Icons (Lucide-style, 24px grid, stroke = currentColor) -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <symbol id="i-logo" viewBox="0 0 24 24"><path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z"/><path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"/></symbol>
+      <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></symbol>
+      <symbol id="i-monitor" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></symbol>
+      <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12-7.5a1 1 0 0 0 0-1.72l-12-7.5A1 1 0 0 0 7 4.5z"/></symbol>
+      <symbol id="i-pause" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></symbol>
+      <symbol id="i-stop" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2"/></symbol>
+      <symbol id="i-send" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></symbol>
+      <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol>
+      <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 15.36-6.36L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.36 6.36L3 16"/><path d="M8 16H3v5"/></symbol>
+      <symbol id="i-shorter" viewBox="0 0 24 24"><path d="M4 7h16M4 12h10M4 17h6"/></symbol>
+      <symbol id="i-chat" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22z"/></symbol>
+      <symbol id="i-book" viewBox="0 0 24 24"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+      <symbol id="i-ear" viewBox="0 0 24 24"><path d="M2 10v3M6 6v11M10 3v18M14 8v7M18 5v13M22 10v3"/></symbol>
+      <symbol id="i-zap" viewBox="0 0 24 24"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></symbol>
+      <symbol id="i-timer" viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2M10 2h4"/></symbol>
+      <symbol id="i-done" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></symbol>
+      <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/></symbol>
+      <symbol id="i-file" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/><path d="M14 2v4a2 2 0 0 0 2 2h4M16 13H8M16 17H8M10 9H8"/></symbol>
+      <symbol id="i-briefcase" viewBox="0 0 24 24"><path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/><rect x="2" y="6" width="20" height="14" rx="2"/></symbol>
+      <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+      <symbol id="i-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/></symbol>
+      <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></symbol>
+      <symbol id="i-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></symbol>
+      <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+      <symbol id="i-reply" viewBox="0 0 24 24"><path d="M20 4v7a4 4 0 0 1-4 4H4"/><path d="m9 10-5 5 5 5"/></symbol>
+      <symbol id="i-compact" viewBox="0 0 24 24"><path d="M4 9h16M4 15h16M9 4l3 3 3-3M9 20l3-3 3 3"/></symbol>
+      <symbol id="i-logout" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></symbol>
+      <symbol id="i-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5M12 7v5l4 2"/></symbol>
+    </defs>
+  </svg>
+
   <header class="topbar">
-    <h1>Interview Assistant <span class="tag">POC</span></h1>
+    <div class="brand">
+      <span class="brand-mark"><svg class="icon"><use href="#i-logo"/></svg></span>
+      <span class="brand-name">Interview Assistant</span>
+      <span class="env-pill">POC</span>
+    </div>
+
     <div class="controls">
-      <select id="source" title="Audio source">
-        <option value="tab">Meeting tab audio</option>
-        <option value="mic">Microphone</option>
-      </select>
-      <button id="startBtn" class="primary">Start</button>
-      <button id="stopBtn" disabled>Stop</button>
-      <span id="meter" class="meter off" title="Captured audio level" aria-label="Captured audio level">
-        <span class="meter-icon" aria-hidden="true">🎙</span>
-        <span class="meter-track"><span id="meterBar" class="meter-bar"></span></span>
-        <span id="meterText" class="meter-text">No audio</span>
+      <label class="source-select" title="What to listen to">
+        <svg class="icon" id="sourceIcon"><use href="#i-mic"/></svg>
+        <span class="sr-only">Audio source</span>
+        <select id="source">
+          <option value="mic" selected>Microphone</option>
+          <option value="tabmic">Meeting tab</option>
+        </select>
+        <svg class="icon chevron" aria-hidden="true"><use href="#i-chevron"/></svg>
+      </label>
+
+      <div id="meter" class="audio-indicator off" title="Audio input level">
+        <span class="wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+        <span id="meterText" class="audio-label">No audio</span>
+      </div>
+
+      <span id="status" class="status ready" role="status" aria-live="polite">
+        <span class="status-dot"></span><span id="statusText">Ready</span>
       </span>
-      <span id="status" class="status idle" role="status" aria-live="polite">
-        <span class="dot"></span><span id="statusText">Idle</span>
-      </span>
+
+      <button id="pauseBtn" class="btn btn-ghost btn-icon" hidden aria-label="Pause listening" title="Pause listening">
+        <svg class="icon"><use href="#i-pause"/></svg>
+      </button>
+      <button id="stopBtn" class="btn btn-ghost" hidden>
+        <svg class="icon"><use href="#i-stop"/></svg><span>Stop</span>
+      </button>
+      <button id="startBtn" class="btn btn-primary">
+        <svg class="icon"><use href="#i-play"/></svg><span>Start interview</span>
+      </button>
+      <span id="userName" class="user-chip" hidden></span>
+      <form id="logoutForm" method="post" action="/logout" hidden>
+        <button class="btn btn-ghost btn-icon" aria-label="Sign out" title="Sign out"><svg class="icon"><use href="#i-logout"/></svg></button>
+      </form>
+      <button id="themeBtn" class="btn btn-ghost btn-icon" aria-label="Switch light or dark theme" title="Switch theme">
+        <svg class="icon theme-dark"><use href="#i-sun"/></svg><svg class="icon theme-light"><use href="#i-moon"/></svg>
+      </button>
     </div>
   </header>
 
-  <div id="errorBar" class="error-bar" hidden></div>
+  <div id="errorBar" class="notice" role="alert" hidden>
+    <svg class="icon"><use href="#i-alert"/></svg>
+    <span id="errorText"></span>
+    <button id="errorClose" class="btn-plain" aria-label="Dismiss"><svg class="icon"><use href="#i-x"/></svg></button>
+  </div>
+
+  <!-- Tablet: Interview / Profile. Mobile: Transcript / Answer / Profile. -->
+  <nav class="tabs" aria-label="Sections">
+    <button class="tab tab-wide" data-view="answer">Interview</button>
+    <button class="tab tab-narrow" data-view="transcript">Transcript</button>
+    <button class="tab tab-narrow" data-view="answer">Answer<span id="tabBadge" class="tab-badge" hidden></span></button>
+    <button class="tab" data-view="context">Profile</button>
+  </nav>
 
   <main class="layout">
-    <section class="panel transcript-panel">
+    <!-- Transcript -->
+    <section class="panel transcript-panel" aria-label="Live transcript">
       <div class="panel-head">
-        <h2>Live transcript</h2>
-        <button id="answerLastBtn" class="small" title="Force an answer for the last thing said">Answer last line</button>
+        <h2>Transcript</h2>
+        <span id="liveBadge" class="live-badge" hidden><span class="live-dot"></span>Live</span>
+        <button id="answerLastBtn" class="btn btn-ghost btn-sm" title="Answer the last thing that was said">
+          <svg class="icon"><use href="#i-reply"/></svg><span>Answer last line</span>
+        </button>
       </div>
       <div id="transcript" class="transcript" aria-live="off">
-        <p class="empty">Press Start and share the meeting tab (tick "Share tab audio").</p>
+        <div class="empty">
+          <svg class="icon empty-icon"><use href="#i-ear"/></svg>
+          <p class="empty-title">I'll listen along with you</p>
+          <p class="empty-text">Press <b>Start interview</b> and share the meeting tab with <b>Also share tab audio</b> on. The conversation will appear here.</p>
+        </div>
       </div>
-      <form id="askForm" class="ask-form">
-        <input id="askInput" type="text" placeholder="Or type a question to test…" autocomplete="off" />
-        <button type="submit" class="small">Ask</button>
+      <form id="askForm" class="composer">
+        <label for="askInput" class="sr-only">Ask a question</label>
+        <input id="askInput" type="text" placeholder="Ask anything, e.g. How would you design a rate limiter?" autocomplete="off" enterkeyhint="send" />
+        <button type="submit" class="send-btn" aria-label="Ask"><svg class="icon"><use href="#i-send"/></svg></button>
       </form>
     </section>
 
-    <section class="panel answer-panel">
-      <div class="panel-head"><h2>Detected question</h2><span id="questionReason" class="muted"></span></div>
-      <div id="question" class="question muted">Waiting for a question…</div>
-
-      <div class="panel-head"><h2>Suggested answer</h2></div>
-      <div id="answer" class="answer"></div>
-
-      <div id="metrics" class="metrics" hidden>
-        <div><span>Speech end → detected</span><b id="mDetect">–</b></div>
-        <div><span>Time to first token</span><b id="mTtft">–</b></div>
-        <div><span>Speech end → first token</span><b id="mE2e">–</b></div>
-        <div><span>Full answer</span><b id="mTotal">–</b></div>
+    <!-- Question + answer -->
+    <section class="panel answer-panel" aria-label="Suggested answer">
+      <div class="answer-toolbar">
+        <div class="segmented" role="radiogroup" aria-label="Answer length" id="lengthGroup">
+          <button role="radio" data-length="short">Short</button>
+          <button role="radio" data-length="balanced">Balanced</button>
+          <button role="radio" data-length="detailed">Detailed</button>
+        </div>
+        <button id="compactBtn" class="btn btn-ghost btn-sm" aria-pressed="false" title="Show only what to say">
+          <svg class="icon"><use href="#i-compact"/></svg><span>Compact</span>
+        </button>
       </div>
 
-      <details class="history">
-        <summary>Earlier Q&amp;A (<span id="historyCount">0</span>)</summary>
-        <ol id="historyList"></ol>
-      </details>
+      <div class="answer-scroll">
+        <div id="answerEmpty" class="empty answer-empty">
+          <svg class="icon empty-icon"><use href="#i-chat"/></svg>
+          <p class="empty-title">Take a breath. You've got this.</p>
+          <p class="empty-text">When the interviewer asks something, a suggested answer appears here in plain, natural words. You can also type a question to practise.</p>
+        </div>
+
+        <article id="qaCard" class="qa" hidden>
+          <div class="question-card" aria-live="polite">
+            <div class="eyebrow">
+              <span id="questionSource">Interviewer asked</span>
+              <span id="questionTag" class="chip" hidden></span>
+            </div>
+            <p id="question" class="question"></p>
+          </div>
+
+          <div class="answer-card">
+            <div class="eyebrow">You could say</div>
+            <div id="answer" class="answer"></div>
+            <div id="answerActions" class="answer-actions" hidden>
+              <button class="btn btn-ghost btn-sm" data-action="copy"><svg class="icon"><use href="#i-copy"/></svg><span>Copy</span></button>
+              <button class="btn btn-ghost btn-sm" data-action="regenerate"><svg class="icon"><use href="#i-refresh"/></svg><span>Regenerate</span></button>
+              <button class="btn btn-ghost btn-sm" data-action="shorter"><svg class="icon"><use href="#i-shorter"/></svg><span>Shorter</span></button>
+              <button class="btn btn-ghost btn-sm" data-action="conversational"><svg class="icon"><use href="#i-chat"/></svg><span>More natural</span></button>
+              <button class="btn btn-ghost btn-sm" data-action="detailed"><svg class="icon"><use href="#i-book"/></svg><span>More detail</span></button>
+            </div>
+          </div>
+
+          <div id="metrics" class="metrics" hidden>
+            <span class="metric" title="From the end of the question to it being detected"><svg class="icon"><use href="#i-ear"/></svg>Detected <b id="mDetect">–</b></span>
+            <span class="metric" title="From sending the question to the model until its first word"><svg class="icon"><use href="#i-zap"/></svg>First word <b id="mTtft">–</b></span>
+            <span class="metric" title="From the end of the question until the first word of the answer on screen"><svg class="icon"><use href="#i-timer"/></svg>Speech → answer <b id="mE2e">–</b></span>
+            <span class="metric" title="Time to write the whole answer"><svg class="icon"><use href="#i-done"/></svg>Complete <b id="mTotal">–</b></span>
+          </div>
+        </article>
+
+        <section id="history" class="history" hidden>
+          <h3><svg class="icon"><use href="#i-history"/></svg>Earlier in this interview <span id="historyCount" class="count">0</span></h3>
+          <ol id="historyList"></ol>
+        </section>
+      </div>
     </section>
 
-    <section class="panel context-panel">
-      <div class="panel-head"><h2>Your context</h2><span id="contextSaved" class="muted"></span></div>
-      <label for="resume">Resume / summary</label>
-      <textarea id="resume" rows="9" placeholder="Paste your resume or a short professional summary…"></textarea>
-      <label for="jd">Job description</label>
-      <textarea id="jd" rows="9" placeholder="Paste the job description…"></textarea>
-      <p class="muted small-text">Saved in this browser only. Sent to the server when you press Start or Ask.</p>
+    <!-- Profile -->
+    <section class="panel context-panel" aria-label="Your profile">
+      <div class="panel-head">
+        <h2>Your profile</h2>
+        <span id="contextSaved" class="saved" aria-live="polite"></span>
+      </div>
+      <div class="profile-summary">
+        <span id="resumeChip" class="chip"></span>
+        <span id="jdChip" class="chip"></span>
+      </div>
+
+      <div class="field">
+        <div class="field-head">
+          <label for="resume"><svg class="icon"><use href="#i-file"/></svg>Resume or summary</label>
+          <span id="resumeCount" class="char-count"></span>
+        </div>
+        <textarea id="resume" rows="8" placeholder="Paste your resume or a few lines about your experience. Answers only use what you share here."></textarea>
+      </div>
+
+      <div class="field">
+        <div class="field-head">
+          <label for="jd"><svg class="icon"><use href="#i-briefcase"/></svg>Job description</label>
+          <span id="jdCount" class="char-count"></span>
+        </div>
+        <textarea id="jd" rows="8" placeholder="Paste the job description so answers connect to what they're looking for."></textarea>
+      </div>
+
+      <div class="field">
+        <div class="field-head"><span class="label">How answers should sound</span></div>
+        <div class="style-options" role="radiogroup" aria-label="Answer style" id="styleGroup">
+          <button role="radio" data-style="natural"><b>Natural</b><span>Conversational, like talking to a colleague</span></button>
+          <button role="radio" data-style="concise"><b>Concise</b><span>Professional and to the point</span></button>
+          <button role="radio" data-style="technical"><b>Technical</b><span>Precise, with trade-offs and internals</span></button>
+          <button role="radio" data-style="beginner"><b>Simple</b><span>Plain words, easy to follow</span></button>
+        </div>
+      </div>
+
+      <p class="footnote">Stored only in this browser. Sent to the server when you start or ask a question.</p>
     </section>
   </main>
 

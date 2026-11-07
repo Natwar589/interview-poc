@@ -27,5 +27,17 @@ test('de-duplicates case-insensitively and caps the list', () => {
   assert.equal(terms.filter((t) => t.toLowerCase() === 'react').length, 1);
   assert.equal(terms.filter((t) => t.toLowerCase() === 'redis').length, 1);
   const many = Array.from({ length: 200 }, (_, i) => `Product${i}x`).join(' ');
-  assert.ok(buildKeyterms({ resume: many }).length <= 80);
+  assert.ok(buildKeyterms({ resume: many }).length <= 100);
+});
+
+test('a long resume + JD never pushes out the base list (live bug: "house robber" heard as "house and our")', () => {
+  const many = Array.from({ length: 200 }, (_, i) => `Product${i}x`).join(' ');
+  const terms = buildKeyterms({ resume: many, jobDescription: many });
+  for (const t of ['house robber', 'Kafka', 'array', 'two sum']) assert.ok(terms.includes(t), `missing ${t}`);
+});
+
+test('capitalised sentence starts: common words dropped, names kept', () => {
+  const terms = extractTerms('Build scalable APIs. Use Redis. Mushroom is our MCP platform. I worked at Walkover.');
+  for (const t of ['Build', 'Use']) assert.ok(!terms.includes(t), `kept ${t}`);
+  for (const t of ['Mushroom', 'Walkover', 'Redis', 'MCP']) assert.ok(terms.includes(t), `missing ${t}`);
 });

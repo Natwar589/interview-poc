@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import http from 'node:http';
+import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
@@ -8,31 +9,83 @@ import { openDeepgram } from './deepgram.js';
 import { QuestionDetector } from './questionDetector.js';
 import { EnergyVad, rms } from './vad.js';
 import { buildKeyterms } from './keyterms.js';
-import { streamAnswer, describeError, answerConfig, isAbortError } from './answer.js';
+import { streamAnswer, describeError, answerConfig, isAbortError, ANSWER_STYLES, ANSWER_LENGTHS, REFINE_KINDS } from './answer.js';
+import { readKeys } from './keyPool.js';
+import { setupAuth, readCookie } from './auth.js';
 
 const PORT = Number(process.env.PORT) || 3000;
 const MAX_CONTEXT_CHARS = 20000;
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 
 const app = express();
+
+// Visit notification: once per browser, post a small JSON event to VISIT_WEBHOOK_URL.
+// With login on, that happens at the browser's first successful sign-in and includes the
+// visitor's name and email; with login off, at its first page load. "Once per
+// browser" = no visitor cookie yet; we then set one (random id, 1 year). Sent from the
+// server so ad blockers and CORS can't stop it and the URL stays out of the page.
+// Fire-and-forget: nothing waits on the webhook.
+const VISIT_WEBHOOK_URL = process.env.VISIT_WEBHOOK_URL;
+const VISITOR_COOKIE = 'ia_visitor';
+
+function notifyNewVisitor(req, res, extra = {}) {
+  if (!VISIT_WEBHOOK_URL || readCookie(req.headers.cookie, VISITOR_COOKIE)) return;
+  const visitorId = crypto.randomUUID();
+  res.cookie(VISITOR_COOKIE, visitorId, { maxAge: 365 * 24 * 3600 * 1000, httpOnly: true, sameSite: 'lax' });
+  const visit = {
+    event: 'visit',
+    visitorId,
+    ...extra,
+    at: new Date().toISOString(),
+    path: req.originalUrl,
+    userAgent: req.get('user-agent') || '',
+    referrer: req.get('referer') || '',
+  };
+  fetch(VISIT_WEBHOOK_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(visit),
+    signal: AbortSignal.timeout(5000),
+  })
+    .then((r) => console.log(`[visit] new visitor${extra.name ? ` (${extra.name})` : ''}, webhook ${r.status}`))
+    .catch((err) => console.warn(`[visit] webhook failed: ${err.message}`));
+}
+
+// Email-code sign-in: codes go out through the same webhook (event "login_code").
+app.use(express.json({ limit: '4kb' }));
+const auth = setupAuth(app, {
+  webhookUrl: process.env.LOGIN_WEBHOOK_URL || VISIT_WEBHOOK_URL,
+  sessionSecret: process.env.SESSION_SECRET,
+  allowedEmails: (process.env.ALLOWED_EMAILS || '').split(/[\s,]+/).filter(Boolean),
+  loginPage: path.join(ROOT, '..', 'public', 'login.html'),
+  onLogin: ({ name, email, req, res }) => notifyNewVisitor(req, res, { name, email }),
+});
+if (!auth.enabled) {
+  app.use((req, res, next) => {
+    if (req.method === 'GET' && (req.path === '/' || req.path === '/index.html')) notifyNewVisitor(req, res);
+    next();
+  });
+}
 app.use(express.static(path.join(ROOT, '..', 'public')));
 app.get('/health', (_req, res) =>
   res.json({
     ok: true,
     deepgram: !!process.env.DEEPGRAM_API_KEY,
-    gemini: !!process.env.GEMINI_API_KEY,
-    anthropic: !!process.env.ANTHROPIC_API_KEY,
+    keys: { gemini: readKeys('GEMINI').length, anthropic: readKeys('ANTHROPIC').length, groq: readKeys('GROQ').length },
     mock: process.env.MOCK_LLM === '1',
     ...answerConfig,
   }),
 );
 
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 1 << 20 });
+// Signed-out browsers can't open the audio/answer socket either.
+const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 1 << 20, verifyClient: ({ req }) => auth.isAuthed(req) });
 
 // One Session per browser connection. Protocol:
 //   client -> server: binary frames = PCM16 16kHz mono audio
 //                     JSON {type:'start', context} | {type:'stop'} | {type:'ask', text} | {type:'context', context}
+//                     {type:'ask', refine:'regenerate'|'shorter'|'conversational'|'detailed'} redoes the last answer
+//                     context = {resume, jobDescription, answerStyle?, answerLength?}
 //   server -> client: JSON {type:'status'|'transcript'|'question'|'skipped'|'answer_delta'|'answer_done'|'error', ...}
 class Session {
   constructor(ws) {
@@ -61,6 +114,8 @@ class Session {
     this.context = {
       resume: String(ctx.resume ?? '').slice(0, MAX_CONTEXT_CHARS),
       jobDescription: String(ctx.jobDescription ?? '').slice(0, MAX_CONTEXT_CHARS),
+      answerStyle: ANSWER_STYLES.includes(ctx.answerStyle) ? ctx.answerStyle : 'natural',
+      answerLength: ANSWER_LENGTHS.includes(ctx.answerLength) ? ctx.answerLength : 'balanced',
     };
   }
 
@@ -90,6 +145,7 @@ class Session {
     this.stt = openDeepgram({
       apiKey: process.env.DEEPGRAM_API_KEY,
       model: process.env.DEEPGRAM_MODEL || 'nova-3',
+      language: process.env.DEEPGRAM_LANGUAGE || 'en',
       keyterms,
       endpointingMs: Number(process.env.DEEPGRAM_ENDPOINTING_MS) || 300,
       onTranscript: ({ text, isFinal, speechFinal, fromFinalize, speechEndAt }) => {
@@ -164,14 +220,17 @@ class Session {
     this.vad?.push(chunk);
   }
 
-  async answer({ text, preamble = '', reason, speechEndAt, detectedAt = Date.now() }) {
+  async answer({ text, preamble = '', reason, speechEndAt, detectedAt = Date.now(), refine }) {
     // A new question supersedes the one being answered.
     this.current?.abort.abort();
     const id = this.nextId++;
     const abort = new AbortController();
     this.current = { id, abort };
+    // A rewrite replaces the last Q&A instead of adding a new one, and the model sees the
+    // conversation as it was before that answer.
+    const history = refine ? this.history.slice(0, -1) : this.history;
 
-    this.send({ type: 'question', id, text, reason, preamble });
+    this.send({ type: 'question', id, text, reason, preamble, refine: refine?.kind });
     this.status('thinking');
     const requestAt = Date.now();
     let answerStarted = false;
@@ -180,7 +239,8 @@ class Session {
         question: text,
         preamble,
         context: this.context,
-        history: this.history,
+        history,
+        refine,
         signal: abort.signal,
         onDelta: (delta) => {
           if (!answerStarted) {
@@ -195,10 +255,9 @@ class Session {
       console.log(
         `[q${id}] "${text}" (${reason}) detect=${sec(speechEndAt && detectedAt - speechEndAt)} ` +
           `ttft=${sec(result.firstTokenAt && result.firstTokenAt - requestAt)} ` +
-          `e2e=${sec(speechEndAt && result.firstTokenAt && result.firstTokenAt - speechEndAt)} model=${result.model ?? answerConfig.model}`,
+          `e2e=${sec(speechEndAt && result.firstTokenAt && result.firstTokenAt - speechEndAt)} model=${result.provider ?? answerConfig.provider}/${result.model ?? answerConfig.model}`,
       );
-      this.history.push({ question: text, answer: result.text });
-      this.history = this.history.slice(-10);
+      this.history = [...history, { question: text, answer: result.text }].slice(-10);
       this.send({
         type: 'answer_done',
         id,
@@ -238,9 +297,16 @@ class Session {
       case 'diag': return console.log('[diag]', JSON.stringify(msg.diag));
       case 'context': return this.setContext(msg.context);
       case 'ask': {
+        if (msg.context) this.setContext(msg.context);
+        if (msg.refine) {
+          const last = this.history.at(-1);
+          if (!REFINE_KINDS.includes(msg.refine) || !last) {
+            return this.send({ type: 'error', message: 'There is no answer to rework yet.' });
+          }
+          return this.answer({ text: last.question, reason: 'manual', refine: { kind: msg.refine, previous: last.answer } });
+        }
         // Manual trigger (button or typed question): bypasses the detector.
         const text = String(msg.text ?? '').trim().slice(0, 2000);
-        if (msg.context) this.setContext(msg.context);
         if (text) this.answer({ text, reason: 'manual' });
         return;
       }
@@ -273,10 +339,17 @@ wss.on('connection', (ws) => {
   session.status('idle');
 });
 
-server.listen(PORT, () => {
-  console.log(`Interview assistant running at http://localhost:${PORT}`);
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`Interview assistant running at http://0.0.0.0:${PORT}`);
+  if (!auth.enabled) console.warn('  ! No webhook set: sign-in is off and the app is open to anyone who can reach it');
+  else {
+    console.log(`  login: email code via webhook, ${auth.allowedCount ? `${auth.allowedCount} allowed email(s)` : 'any email address'}`);
+    if (!auth.allowedCount) console.warn('  ! ALLOWED_EMAILS is empty: anyone with an email address can sign in and use your API keys');
+    if (!auth.persistentSessions) console.warn('  ! SESSION_SECRET not set: everyone is signed out when the server restarts');
+  }
   if (!process.env.DEEPGRAM_API_KEY) console.warn('  ! DEEPGRAM_API_KEY not set: live transcription disabled');
-  console.log(`  answers: ${answerConfig.provider} / ${answerConfig.model}${process.env.MOCK_LLM === '1' ? ' (MOCK_LLM on)' : ''}`);
-  const keyVar = answerConfig.provider === 'gemini' ? 'GEMINI_API_KEY' : 'ANTHROPIC_API_KEY';
-  if (!process.env[keyVar] && process.env.MOCK_LLM !== '1') console.warn(`  ! ${keyVar} not set: answers will fail`);
+  const chain = answerConfig.chain.map((p) => `${p.provider} (${p.model}, ${p.keys} key${p.keys === 1 ? '' : 's'})`).join(' -> ');
+  console.log(`  answers: ${chain}${process.env.MOCK_LLM === '1' ? ' (MOCK_LLM on)' : ''}`);
+  if (answerConfig.skipped.length) console.warn(`  ! no keys for ${answerConfig.skipped.join(', ')}: left out of the fallback chain`);
+  if (!answerConfig.chain[0].keys && process.env.MOCK_LLM !== '1') console.warn(`  ! ${answerConfig.provider.toUpperCase()}_API_KEYS not set: answers will fail`);
 });

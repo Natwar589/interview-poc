@@ -15,6 +15,12 @@ const cases = [
   ['Can you hear me okay?', 'smalltalk', true],
   ['How are you doing today?', 'smalltalk', true],
   ['We use Kafka for most of our event pipelines.', 'statement', true],
+  // From a live test: command-style coding requests.
+  ['Give me C plus plus solution for house and robber problem.', 'question', true],
+  ['Give me a full code.', 'question', true],
+  ['Write a function to reverse a linked list.', 'question', true],
+  ['Solve two sum in Python.', 'question', true],
+  ['We write code in Go every day.', 'statement', true],
 ];
 
 for (const [text, kind, complete] of cases) {
@@ -117,4 +123,29 @@ test('"compare X and Y" style prompts are questions', () => {
   assert.equal(classifyUtterance('Compare Kafka and Redis.').kind, 'question');
   assert.equal(classifyUtterance('Explain the difference between TCP and UDP.').kind, 'question');
   assert.equal(classifyUtterance('Pros and cons of microservices.').kind, 'question');
+});
+
+test('a long pause after a dangling word waits for the rest (live: "How to find a median of a")', async () => {
+  const fired = [];
+  const d = new QuestionDetector({ holdMs: 30, onQuestion: (q) => fired.push(q), onSkipped: () => {} });
+  d.onFinal('How to find a median of a', { speechFinal: true });
+  d.onUtteranceEnd();
+  assert.equal(fired.length, 0, 'answered a half sentence');
+  d.onInterim('array');
+  d.onFinal('array?', { speechFinal: true });
+  assert.equal(fired.length, 1);
+  assert.equal(fired[0].text, 'How to find a median of a array?');
+  d.dispose();
+});
+
+test('a short unpunctuated opener waits longer (live: "Write a program" ... "for house robber problem")', async () => {
+  const fired = [];
+  const d = new QuestionDetector({ holdMs: 30, onQuestion: (q) => fired.push(q), onSkipped: () => {} });
+  d.onFinal('Write a program', { speechFinal: true });
+  await new Promise((r) => setTimeout(r, 40)); // past holdMs, inside 2x holdMs
+  assert.equal(fired.length, 0);
+  d.onFinal('for the house robber problem.', { speechFinal: true });
+  assert.equal(fired.length, 1);
+  assert.equal(fired[0].text, 'Write a program for the house robber problem.');
+  d.dispose();
 });

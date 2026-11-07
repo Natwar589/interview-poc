@@ -45,11 +45,18 @@ const INTERROGATIVE_START =
 const IMPERATIVE_CUE =
   /\b(tell me|tell us|walk me through|walk us through|talk me through|talk about|describe|explain|give me an example|give an example|share (an|a|some) (example|time|story)|help me understand|elaborate|introduce yourself|take me through|compare|contrast|differentiate|difference between|pros and cons)\b/;
 
+// Commands that open a sentence: "Give me a full code.", "Write a function that ...",
+// "Solve two sum." Only at the start, so "We write code in Go." stays a statement.
+const IMPERATIVE_START =
+  /^(please |now |then |just )?(give|write|implement|code|solve|show|design|build|find|calculate|compute|optimi[sz]e|reverse|sort|debug|fix|create|define|draw|list|name|derive|convert|merge|count|check|print)\b/;
+
 // Utterances ending like this are probably mid-sentence pauses.
 // Without closing punctuation, ending on any of these means the speaker is mid-phrase
 // ("How does Kafka compare to …"): never answer that on a timer.
 const DANGLING =
   /\b(and|or|but|the|a|an|to|of|for|with|about|between|versus|vs|than|from|into|on|in|at|by|like|so|um|uh|your|my|our|their|this|that|if|because|when|how|what|which|is|are|was|were)$/;
+
+const DANGLING_WAIT_MS = 2000;
 
 const TRAILING_INCOMPLETE =
   /\b(and|or|but|the|a|an|like|so|um|uh|your|my|if|because)[,.]?$/;
@@ -86,7 +93,7 @@ export function classifyUtterance(rawText) {
     const s = plain.replace(/^((so|okay|ok|alright|and|now|great|cool|right)\s+)+/, '');
     let cue = '';
     if (sentences[i].endsWith('?')) cue = 'ends with "?"';
-    else if (IMPERATIVE_CUE.test(s)) cue = 'imperative prompt';
+    else if (IMPERATIVE_CUE.test(s) || IMPERATIVE_START.test(s)) cue = 'imperative prompt';
     else if (INTERROGATIVE_START.test(s) && s.split(' ').length >= 4) cue = 'interrogative opening';
     if (cue) { startIdx = i; reason = cue; } else sawStatement = true;
   }
@@ -156,6 +163,7 @@ export class QuestionDetector {
     if (text.trim()) {
       this.onInterim(text);
       this.buffer.push(text.trim());
+      this.danglingWaited = false; // new words: a fresh dangling end gets its own wait
       this.speechEndAt = speechEndAt ?? Date.now();
     }
     if (speechFinal) this.evaluate('pause');
@@ -169,6 +177,18 @@ export class QuestionDetector {
   evaluate(trigger, { force = false } = {}) {
     const text = this.text;
     if (!text) return;
+    // Cut off mid-phrase ("How to find a median of a"): even a 1 s pause is usually the
+    // speaker thinking. Give it DANGLING_WAIT_MS more; new speech cancels the wait and
+    // joins the buffer, otherwise answer what we have.
+    if (force && !this.danglingWaited && !/[.?!]$/.test(text) && DANGLING.test(normalize(text))) {
+      this.danglingWaited = true;
+      if (this.holdTimer) clearTimeout(this.holdTimer);
+      this.holdTimer = setTimeout(() => {
+        this.holdTimer = null;
+        this.evaluate('dangling_timeout', { force: true });
+      }, DANGLING_WAIT_MS);
+      return;
+    }
     const result = classifyUtterance(text);
 
     if (result.kind !== 'question') {
@@ -191,6 +211,9 @@ export class QuestionDetector {
       return;
     }
     // Looks like a question but may be unfinished: wait a little for more speech.
+    // Short unpunctuated openers ("Write a program") are usually the speaker pausing to
+    // think; a live test answered one before "...for house robber problem" arrived.
+    const short = !/[.?!]$/.test(text) && text.split(/\s+/).length < 6;
     if (!this.holdTimer) {
       this.holdTimer = setTimeout(() => {
         this.holdTimer = null;
@@ -199,7 +222,7 @@ export class QuestionDetector {
         // Still dangling mid-phrase: keep waiting for more words or the long pause.
         if (!/[.?!]$/.test(text) && DANGLING.test(normalize(text))) return;
         if (again.kind === 'question') this.fire(again, 'hold_timeout');
-      }, this.holdMs);
+      }, short ? this.holdMs * 2 : this.holdMs);
     }
   }
 
@@ -224,6 +247,7 @@ export class QuestionDetector {
 
   reset() {
     this.buffer = [];
+    this.danglingWaited = false;
     if (this.holdTimer) clearTimeout(this.holdTimer);
     this.holdTimer = null;
   }
